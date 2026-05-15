@@ -8,8 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, TextIO
 
-from media_ai_core import MediaProcessor, MediaTaskRequest, TaskProgress
-from media_ai_core.processor import CancelledError
+from chameleon_core import MediaProcessor, MediaTaskRequest, TaskProgress
+from chameleon_core.ffmpeg import CancelledError
 
 from .jsonrpc import error, notification, success
 
@@ -22,6 +22,7 @@ class TaskRecord:
     message: str = "Queued"
     result: dict[str, Any] | None = None
     error: str | None = None
+    phase: str = "queued"
     cancel_requested: bool = False
 
 
@@ -73,16 +74,14 @@ class WorkerServer:
             return success(
                 message_id,
                 {
-                    "worker": "media_ai_worker",
+                    "worker": "chameleon_worker",
                     "protocol": "jsonrpc-2.0-ndjson",
-                    "capabilities": {
-                        "tasks": ["image.echo"],
-                        "providers": ["local", "cloud"],
-                        "cancellation": True,
-                        "path_payloads": True,
-                    },
+                    "capabilities": self.processor.capabilities(),
                 },
             )
+
+        if method == "probe_media":
+            return self._probe_media(message_id, params)
 
         if method == "run_task":
             return self._run_task(message_id, params)
@@ -99,13 +98,30 @@ class WorkerServer:
 
         return error(message_id, -32601, f"Method not found: {method}")
 
+    def _probe_media(self, message_id: Any, params: dict[str, Any]) -> dict[str, Any]:
+        try:
+            input_path = Path(params["input_path"])
+            return success(message_id, self.processor.probe(input_path))
+        except KeyError as exc:
+            return error(message_id, -32602, f"Missing required parameter: {exc.args[0]}")
+        except Exception as exc:
+            return error(message_id, -32010, "Media probe failed", str(exc))
+
     def _run_task(self, message_id: Any, params: dict[str, Any]) -> dict[str, Any]:
         try:
+            output_path = params.get("output_path")
+            output_dir = params.get("output_dir")
             request = MediaTaskRequest(
                 kind=str(params["kind"]),
                 input_path=Path(params["input_path"]),
-                output_dir=Path(params["output_dir"]),
-                provider=str(params.get("provider", "local")),
+                output_path=Path(output_path) if output_path else None,
+                output_dir=Path(output_dir) if output_dir else None,
+                target_format=(
+                    str(params["target_format"])
+                    if params.get("target_format") is not None
+                    else None
+                ),
+                preset=str(params.get("preset", "balanced")),
                 options=dict(params.get("options") or {}),
             )
         except KeyError as exc:
@@ -132,6 +148,7 @@ class WorkerServer:
                         else None
                     ),
                     "log": progress.result.log,
+                    "metadata": progress.result.metadata,
                 }
 
             with self._lock:
@@ -139,6 +156,7 @@ class WorkerServer:
                 record.state = progress.state
                 record.progress = progress.progress
                 record.message = progress.message
+                record.phase = progress.phase
                 record.result = result
                 record.error = progress.error
 
@@ -149,7 +167,11 @@ class WorkerServer:
                         "task_id": task_id,
                         "state": progress.state,
                         "progress": progress.progress,
+                        "phase": progress.phase,
                         "message": progress.message,
+                        "elapsed_seconds": progress.elapsed_seconds,
+                        "duration_seconds": progress.duration_seconds,
+                        "speed": progress.speed,
                         "result": result,
                         "error": progress.error,
                     },
@@ -177,8 +199,12 @@ class WorkerServer:
                     {
                         "task_id": task_id,
                         "state": "failed",
+                        "phase": "failed",
                         "progress": self.tasks[task_id].progress,
                         "message": "Failed",
+                        "elapsed_seconds": None,
+                        "duration_seconds": None,
+                        "speed": None,
                         "result": None,
                         "error": str(exc),
                     },
@@ -203,6 +229,7 @@ class WorkerServer:
             payload = {
                 "task_id": task_id,
                 "state": record.state,
+                "phase": record.phase,
                 "progress": record.progress,
                 "message": record.message,
                 "result": record.result,

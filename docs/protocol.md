@@ -12,26 +12,35 @@
 
 ### `initialize`
 
-Checks worker readiness and returns runtime capabilities.
+Checks worker readiness and returns FFmpeg runtime capabilities.
 
 ```json
 {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"client":"winui"}}
 ```
 
+### `probe_media`
+
+Returns FFprobe metadata for an input media file.
+
+```json
+{"jsonrpc":"2.0","id":2,"method":"probe_media","params":{"input_path":"C:/media/input.mp4"}}
+```
+
 ### `run_task`
 
-Starts a long-running media task.
+Starts a long-running FFmpeg conversion task.
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 2,
+  "id": 3,
   "method": "run_task",
   "params": {
-    "kind": "image.echo",
-    "input_path": "C:/media/input.png",
+    "kind": "media.convert",
+    "input_path": "C:/media/input.wav",
     "output_dir": "C:/media/output",
-    "provider": "local",
+    "target_format": "mp3",
+    "preset": "balanced",
     "options": {}
   }
 }
@@ -74,8 +83,12 @@ Asks the worker to exit cleanly.
   "params": {
     "task_id": "...",
     "state": "running",
+    "phase": "converting",
     "progress": 0.5,
     "message": "Processing",
+    "elapsed_seconds": 3.1,
+    "duration_seconds": 6.2,
+    "speed": null,
     "result": null,
     "error": null
   }
@@ -84,3 +97,13 @@ Asks the worker to exit cleanly.
 
 Terminal states are `completed`, `cancelled`, and `failed`.
 
+## First Supported Task Set
+
+- `media.probe`
+- `media.convert`
+
+Supported first-pass formats are:
+
+- Video: `mp4`, `mkv`, `mov`, `webm`, `avi`
+- Audio: `mp3`, `wav`, `flac`, `aac`, `m4a`, `ogg`, `opus`
+- Image: `png`, `jpg`, `jpeg`, `webp`

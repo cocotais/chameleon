@@ -1,6 +1,6 @@
 using Microsoft.UI.Xaml;
 
-namespace MediaAiStudio.WinUI;
+namespace Chameleon.WinUI;
 
 public partial class App : Application
 {
@@ -17,4 +17,3 @@ public partial class App : Application
         _window.Activate();
     }
 }
-

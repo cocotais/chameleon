@@ -1,7 +1,7 @@
 [project]
-name = "winui-python-ai-media-starter"
+name = "chameleon"
 version = "0.1.0"
-description = "WinUI3 plus Python stdio JSON-RPC AI multimedia starter."
+description = "Native media format converter powered by an FFmpeg-first Python worker."
 requires-python = ">=3.11"
 dependencies = []
 
@@ -13,4 +13,3 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["python"]
-

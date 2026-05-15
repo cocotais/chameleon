@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 import time
+import subprocess
 from io import StringIO
 from pathlib import Path
 
-from media_ai_worker.server import WorkerServer
+import pytest
+
+from chameleon_worker.server import WorkerServer
 
 
-def test_initialize_returns_capabilities() -> None:
+def test_initialize_returns_ffmpeg_capabilities() -> None:
     server = WorkerServer(stdout=StringIO())
 
     response = server.handle(
@@ -16,25 +19,59 @@ def test_initialize_returns_capabilities() -> None:
 
     assert response is not None
     assert response["result"]["capabilities"]["path_payloads"] is True
-    assert "image.echo" in response["result"]["capabilities"]["tasks"]
+    assert "media.probe" in response["result"]["capabilities"]["tasks"]
+    assert "media.convert" in response["result"]["capabilities"]["tasks"]
 
 
-def test_run_task_copies_file_and_reports_status(tmp_path: Path) -> None:
-    input_path = tmp_path / "input.txt"
+def test_probe_and_convert_audio_with_ffmpeg(tmp_path: Path) -> None:
+    capabilities = WorkerServer(stdout=StringIO()).processor.capabilities()
+    ffmpeg_path = capabilities["ffmpeg"]["path"]
+    if not capabilities["ffmpeg"]["available"] or ffmpeg_path is None:
+        pytest.skip("ffmpeg is not available")
+
+    input_path = tmp_path / "tone.wav"
     output_dir = tmp_path / "out"
-    input_path.write_text("sample", encoding="utf-8")
+    subprocess.run(
+        [
+            ffmpeg_path,
+            "-hide_banner",
+            "-loglevel",
+            "error",
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "sine=frequency=440:duration=1",
+            "-c:a",
+            "pcm_s16le",
+            str(input_path),
+        ],
+        check=True,
+    )
     server = WorkerServer(stdout=StringIO())
+
+    probe = server.handle(
+        {
+            "jsonrpc": "2.0",
+            "id": 2,
+            "method": "probe_media",
+            "params": {"input_path": str(input_path)},
+        }
+    )
+    assert probe["result"]["duration_seconds"] > 0
 
     response = server.handle(
         {
             "jsonrpc": "2.0",
-            "id": 2,
+            "id": 3,
             "method": "run_task",
             "params": {
-                "kind": "image.echo",
+                "kind": "media.convert",
                 "input_path": str(input_path),
                 "output_dir": str(output_dir),
-                "provider": "local",
+                "target_format": "mp3",
+                "preset": "balanced",
+                "options": {},
             },
         }
     )
@@ -47,7 +84,7 @@ def test_run_task_copies_file_and_reports_status(tmp_path: Path) -> None:
         status = server.handle(
             {
                 "jsonrpc": "2.0",
-                "id": 3,
+                "id": 4,
                 "method": "get_status",
                 "params": {"task_id": task_id},
             }
@@ -58,4 +95,6 @@ def test_run_task_copies_file_and_reports_status(tmp_path: Path) -> None:
 
     assert status is not None
     assert status["result"]["state"] == "completed"
-    assert Path(status["result"]["result"]["output_path"]).read_text(encoding="utf-8") == "sample"
+    output_path = Path(status["result"]["result"]["output_path"])
+    assert output_path.exists()
+    assert output_path.suffix == ".mp3"

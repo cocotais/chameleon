@@ -11,8 +11,10 @@ TaskState = Literal["queued", "running", "completed", "failed", "cancelled"]
 class MediaTaskRequest:
     kind: str
     input_path: Path
-    output_dir: Path
-    provider: str = "local"
+    output_path: Path | None = None
+    output_dir: Path | None = None
+    target_format: str | None = None
+    preset: str = "balanced"
     options: dict[str, Any] = field(default_factory=dict)
 
 
@@ -21,6 +23,7 @@ class MediaTaskResult:
     output_path: Path
     thumbnail_path: Path | None = None
     log: str = ""
+    metadata: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass(frozen=True)
@@ -28,6 +31,9 @@ class TaskProgress:
     state: TaskState
     progress: float
     message: str
+    phase: str = "converting"
+    elapsed_seconds: float | None = None
+    duration_seconds: float | None = None
+    speed: str | None = None
     result: MediaTaskResult | None = None
     error: str | None = None
-

@@ -6,7 +6,7 @@ using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
 
-namespace MediaAiStudio.WinUI.Services;
+namespace Chameleon.WinUI.Services;
 
 public sealed class PythonWorkerClient : IAsyncDisposable
 {
@@ -27,7 +27,7 @@ public sealed class PythonWorkerClient : IAsyncDisposable
         var startInfo = new ProcessStartInfo
         {
             FileName = "python",
-            Arguments = "-m media_ai_worker",
+            Arguments = "-m chameleon_worker",
             UseShellExecute = false,
             RedirectStandardInput = true,
             RedirectStandardOutput = true,
@@ -53,25 +53,31 @@ public sealed class PythonWorkerClient : IAsyncDisposable
     {
         return await SendRequestAsync(
             "initialize",
-            new { client = "MediaAiStudio.WinUI" },
+            new { client = "Chameleon.WinUI" },
             cancellationToken);
     }
 
-    public async Task<string> RunTaskAsync(
-        string kind,
+    public Task<JsonElement> ProbeMediaAsync(string inputPath, CancellationToken cancellationToken = default)
+    {
+        return SendRequestAsync("probe_media", new { input_path = inputPath }, cancellationToken);
+    }
+
+    public async Task<string> RunConversionTaskAsync(
         string inputPath,
         string outputDir,
-        string provider,
+        string targetFormat,
+        string preset,
         CancellationToken cancellationToken = default)
     {
         var result = await SendRequestAsync(
             "run_task",
             new
             {
-                kind,
+                kind = "media.convert",
                 input_path = inputPath,
                 output_dir = outputDir,
-                provider,
+                target_format = targetFormat,
+                preset,
                 options = new { },
             },
             cancellationToken);
@@ -83,6 +89,11 @@ public sealed class PythonWorkerClient : IAsyncDisposable
     public Task<JsonElement> CancelTaskAsync(string taskId, CancellationToken cancellationToken = default)
     {
         return SendRequestAsync("cancel_task", new { task_id = taskId }, cancellationToken);
+    }
+
+    public Task<JsonElement> GetStatusAsync(string taskId, CancellationToken cancellationToken = default)
+    {
+        return SendRequestAsync("get_status", new { task_id = taskId }, cancellationToken);
     }
 
     public Task<JsonElement> ShutdownAsync(CancellationToken cancellationToken = default)
@@ -224,4 +235,3 @@ public sealed class PythonWorkerClient : IAsyncDisposable
 }
 
 public sealed record WorkerNotification(string Method, JsonElement Params);
-
