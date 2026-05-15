@@ -1,0 +1,10 @@
+{
+  "profiles": {
+    "MediaAiStudio.WinUI (Package)": {
+      "commandName": "MsixPackage"
+    },
+    "MediaAiStudio.WinUI (Unpackaged)": {
+      "commandName": "Project"
+    }
+  }
+}
