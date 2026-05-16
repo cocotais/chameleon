@@ -4,7 +4,18 @@
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     Title="Chameleon">
 
-    <Grid x:Name="RootGrid" Background="Transparent" AllowDrop="True" DragOver="RootGrid_DragOver" Drop="RootGrid_Drop">
+    <Grid
+        x:Name="RootGrid"
+        Background="Transparent"
+        AllowDrop="True"
+        DragOver="RootGrid_DragOver"
+        Drop="RootGrid_Drop"
+        Opacity="0"
+        RenderTransformOrigin="0.5,0.5">
+        <Grid.RenderTransform>
+            <ScaleTransform x:Name="RootScaleTransform" ScaleX="0.985" ScaleY="0.985" />
+        </Grid.RenderTransform>
+
         <Grid.Resources>
             <SolidColorBrush x:Key="PaneFillBrush" Color="{ThemeResource LayerOnMicaBaseAltFillColorDefault}" />
             <SolidColorBrush x:Key="CardFillBrush" Color="{ThemeResource CardBackgroundFillColorDefault}" />
