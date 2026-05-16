@@ -21,6 +21,15 @@ AUDIO_FORMATS = {"mp3", "wav", "flac", "aac", "m4a", "ogg", "opus"}
 IMAGE_FORMATS = {"png", "jpg", "jpeg", "webp"}
 SUPPORTED_INPUTS = sorted(VIDEO_FORMATS | AUDIO_FORMATS | IMAGE_FORMATS)
 SUPPORTED_OUTPUTS = sorted(VIDEO_FORMATS | AUDIO_FORMATS | IMAGE_FORMATS)
+AUDIO_CODECS = {
+    "mp3": "libmp3lame",
+    "wav": "pcm_s16le",
+    "aac": "aac",
+    "m4a": "aac",
+    "flac": "flac",
+    "opus": "libopus",
+    "ogg": "libvorbis",
+}
 
 
 class FfmpegError(RuntimeError):
@@ -328,20 +337,10 @@ def audio_codec_args(target_format: str, options: dict[str, Any]) -> list[str]:
     codec = options.get("audio_codec")
     bitrate = options.get("audio_bitrate")
     args: list[str] = []
-    if codec:
-        args.extend(["-c:a", str(codec)])
-    elif target_format == "mp3":
-        args.extend(["-c:a", "libmp3lame"])
-    elif target_format == "wav":
-        args.extend(["-c:a", "pcm_s16le"])
-    elif target_format in {"aac", "m4a"}:
-        args.extend(["-c:a", "aac"])
-    elif target_format == "flac":
-        args.extend(["-c:a", "flac"])
-    elif target_format == "opus":
-        args.extend(["-c:a", "libopus"])
-    elif target_format == "ogg":
-        args.extend(["-c:a", "libvorbis"])
+    resolved_codec = str(codec) if codec else AUDIO_CODECS.get(target_format)
+
+    if resolved_codec:
+        args.extend(["-c:a", resolved_codec])
 
     if bitrate and target_format != "wav":
         args.extend(["-b:a", str(bitrate)])
@@ -356,10 +355,12 @@ def video_codec_args(target_format: str, preset: str, options: dict[str, Any]) -
 
     if codec:
         args.extend(["-c:v", str(codec)])
-    elif target_format == "webm":
-        args.extend(["-c:v", "libvpx-vp9"])
     else:
-        args.extend(["-c:v", "libx264", "-pix_fmt", "yuv420p"])
+        args.extend(
+            ["-c:v", "libvpx-vp9"]
+            if target_format == "webm"
+            else ["-c:v", "libx264", "-pix_fmt", "yuv420p"]
+        )
 
     if bitrate:
         args.extend(["-b:v", str(bitrate)])

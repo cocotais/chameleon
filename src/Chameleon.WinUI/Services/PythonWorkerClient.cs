@@ -12,17 +12,23 @@ public sealed class PythonWorkerClient : IAsyncDisposable
 {
     private readonly ConcurrentDictionary<long, TaskCompletionSource<JsonElement>> _pending = new();
     private Process? _process;
+    private CancellationTokenSource? _workerLifetime;
     private long _nextId;
     private Task? _readerTask;
+    private Task? _errorTask;
 
     public event EventHandler<WorkerNotification>? NotificationReceived;
 
-    public async Task StartAsync(CancellationToken cancellationToken = default)
+    public Task StartAsync(CancellationToken cancellationToken = default)
     {
         if (_process is { HasExited: false })
         {
-            return;
+            return Task.CompletedTask;
         }
+
+        cancellationToken.ThrowIfCancellationRequested();
+        _workerLifetime?.Dispose();
+        _workerLifetime = new CancellationTokenSource();
 
         var startInfo = new ProcessStartInfo
         {
@@ -44,9 +50,9 @@ public sealed class PythonWorkerClient : IAsyncDisposable
         _process = Process.Start(startInfo)
             ?? throw new InvalidOperationException("Failed to start Python worker.");
 
-        _readerTask = Task.Run(() => ReadLoopAsync(_process, cancellationToken), cancellationToken);
-        _ = Task.Run(() => DrainErrorAsync(_process), cancellationToken);
-        await Task.CompletedTask;
+        _readerTask = Task.Run(() => ReadLoopAsync(_process, _workerLifetime.Token));
+        _errorTask = Task.Run(() => DrainErrorAsync(_process, _workerLifetime.Token));
+        return Task.CompletedTask;
     }
 
     public async Task<JsonElement> InitializeAsync(CancellationToken cancellationToken = default)
@@ -178,11 +184,11 @@ public sealed class PythonWorkerClient : IAsyncDisposable
         }
     }
 
-    private static async Task DrainErrorAsync(Process process)
+    private static async Task DrainErrorAsync(Process process, CancellationToken cancellationToken)
     {
-        while (!process.HasExited)
+        while (!process.HasExited && !cancellationToken.IsCancellationRequested)
         {
-            var line = await process.StandardError.ReadLineAsync();
+            var line = await process.StandardError.ReadLineAsync(cancellationToken);
             if (line is null)
             {
                 break;
@@ -216,13 +222,16 @@ public sealed class PythonWorkerClient : IAsyncDisposable
             return;
         }
 
-        try
+        if (!_process.HasExited)
         {
-            await ShutdownAsync();
-        }
-        catch
-        {
-            // Worker may already be gone during app shutdown.
+            try
+            {
+                await ShutdownAsync();
+            }
+            catch
+            {
+                // Worker may already be gone during app shutdown.
+            }
         }
 
         if (!_process.HasExited)
@@ -230,7 +239,22 @@ public sealed class PythonWorkerClient : IAsyncDisposable
             _process.Kill(entireProcessTree: true);
         }
 
+        _workerLifetime?.Cancel();
+        if (_readerTask is not null || _errorTask is not null)
+        {
+            try
+            {
+                await Task.WhenAll(
+                    _readerTask ?? Task.CompletedTask,
+                    _errorTask ?? Task.CompletedTask);
+            }
+            catch (OperationCanceledException)
+            {
+            }
+        }
+
         _process.Dispose();
+        _workerLifetime?.Dispose();
     }
 }
 

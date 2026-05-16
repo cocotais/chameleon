@@ -10,6 +10,7 @@ from typing import Any, TextIO
 
 from chameleon_core import MediaProcessor, MediaTaskRequest, TaskProgress
 from chameleon_core.ffmpeg import CancelledError
+from chameleon_core.models import MediaTaskResult
 
 from .jsonrpc import error, notification, success
 
@@ -138,18 +139,7 @@ class WorkerServer:
 
     def _execute_task(self, task_id: str) -> None:
         def on_progress(progress: TaskProgress) -> None:
-            result = None
-            if progress.result is not None:
-                result = {
-                    "output_path": str(progress.result.output_path),
-                    "thumbnail_path": (
-                        str(progress.result.thumbnail_path)
-                        if progress.result.thumbnail_path is not None
-                        else None
-                    ),
-                    "log": progress.result.log,
-                    "metadata": progress.result.metadata,
-                }
+            payload = task_progress_payload(task_id, progress)
 
             with self._lock:
                 record = self.tasks[task_id]
@@ -157,26 +147,10 @@ class WorkerServer:
                 record.progress = progress.progress
                 record.message = progress.message
                 record.phase = progress.phase
-                record.result = result
+                record.result = payload["result"]
                 record.error = progress.error
 
-            self._write(
-                notification(
-                    "task.progress",
-                    {
-                        "task_id": task_id,
-                        "state": progress.state,
-                        "progress": progress.progress,
-                        "phase": progress.phase,
-                        "message": progress.message,
-                        "elapsed_seconds": progress.elapsed_seconds,
-                        "duration_seconds": progress.duration_seconds,
-                        "speed": progress.speed,
-                        "result": result,
-                        "error": progress.error,
-                    },
-                )
-            )
+            self._write(notification("task.progress", payload))
 
         def is_cancelled() -> bool:
             with self._lock:
@@ -241,3 +215,34 @@ class WorkerServer:
         with self._write_lock:
             self.stdout.write(json.dumps(payload, separators=(",", ":")) + "\n")
             self.stdout.flush()
+
+
+def task_result_payload(result: MediaTaskResult | None) -> dict[str, Any] | None:
+    if result is None:
+        return None
+
+    return {
+        "output_path": str(result.output_path),
+        "thumbnail_path": (
+            str(result.thumbnail_path)
+            if result.thumbnail_path is not None
+            else None
+        ),
+        "log": result.log,
+        "metadata": result.metadata,
+    }
+
+
+def task_progress_payload(task_id: str, progress: TaskProgress) -> dict[str, Any]:
+    return {
+        "task_id": task_id,
+        "state": progress.state,
+        "progress": progress.progress,
+        "phase": progress.phase,
+        "message": progress.message,
+        "elapsed_seconds": progress.elapsed_seconds,
+        "duration_seconds": progress.duration_seconds,
+        "speed": progress.speed,
+        "result": task_result_payload(progress.result),
+        "error": progress.error,
+    }
